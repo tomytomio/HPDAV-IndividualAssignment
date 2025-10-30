@@ -13,6 +13,8 @@ class ScatterplotD3 {
     circleRadius = 3;
     xScale;
     yScale;
+    pointsG;
+    brushG;
 
 
     constructor(el){
@@ -41,20 +43,20 @@ class ScatterplotD3 {
         // build xAxisG
         this.matSvg.append("g")
             .attr("class","xAxisG")
-            .attr("transform","translate(0,"+this.height+")")
-        ;
+            .attr("transform","translate(0,"+this.height+")");
         this.matSvg.append("g")
-            .attr("class","yAxisG")
-        ;
+            .attr("class","yAxisG");
+        
+        // points group (all markers) and brush layer
+        this.pointsG = this.matSvg.append("g").attr("class","pointsG");
+        this.brushG = this.matSvg.append("g").attr("class","brushG");
     }
 
     changeBorderAndOpacity(selection, selected){
-        selection.style("opacity", selected?1:this.defaultOpacity)
-        ;
+        selection.style("opacity", selected?1:this.defaultOpacity);
 
         selection.select(".markerCircle")
-            .attr("stroke-width",selected?2:0)
-        ;
+            .attr("stroke-width",selected?2:0);
     }
 
     updateMarkers(selection,xAttribute,yAttribute){
@@ -112,6 +114,8 @@ class ScatterplotD3 {
 
 
     renderScatterplot = function (visData, xAttribute, yAttribute, controllerMethods){
+        //force data as an array
+        this.data = visData || [];
         console.log("render scatterplot with a new data list ...")
         // build the size scales and x,y axis
         this.updateAxis(visData, xAttribute, yAttribute);
@@ -129,6 +133,12 @@ class ScatterplotD3 {
                         .on("click", (event,itemData)=>{
                             controllerMethods.handleOnClick(itemData);
                         })
+                        .on("mouseenter", (event, itemData)=>{
+                            controllerMethods.handleOnMouseEnter(itemData);
+                        })
+                        .on("mouseleave", (event, itemData)=>{
+                            controllerMethods.handleOnMouseLeave(itemData);
+                        });
                     ;
                     // render element as child of each element "g"
                     itemG.append("circle")
@@ -147,6 +157,46 @@ class ScatterplotD3 {
                 }
 
             )
+        // set up brush (2D)
+        const brush = d3.brush()
+            .extent([[0, 0], [this.width, this.height]])
+            .on("end", (event) => {
+                if (!event.selection) {
+                    // clear selection: prefer a dedicated selection handler if provided
+                    if (controllerMethods) {
+                        if (typeof controllerMethods.handleOnSelection === 'function') {
+                            controllerMethods.handleOnSelection([]);
+                        } else if (typeof controllerMethods.updateSelectedItems === 'function') {
+                            controllerMethods.updateSelectedItems([]);
+                        }
+                    }
+                    return;
+                }
+                const [[x0, y0], [x1, y1]] = event.selection;
+                // convert pixels to data-space
+                const xMin = this.xScale.invert(x0);
+                const xMax = this.xScale.invert(x1);
+                // note: yScale range is [height,0] so invert accordingly
+                const yMax = this.yScale.invert(y0);
+                const yMin = this.yScale.invert(y1);
+
+                const selected = this.data.filter(d => {
+                    const xv = +d[xAttribute];
+                    const yv = +d[yAttribute];
+                    return xv >= xMin && xv <= xMax && yv >= yMin && yv <= yMax;
+                }).map(d => ({...d, selected:true}));
+
+                // call the dedicated selection handler if present (brush selection)
+                if (controllerMethods && typeof controllerMethods.handleOnSelection === 'function') {
+                    controllerMethods.handleOnSelection(selected);
+                } else if (controllerMethods && typeof controllerMethods.handleOnMouseEnter === 'function') {
+                    // fallback to existing mouse enter handler if selection handler not provided
+                    controllerMethods.handleOnMouseEnter(selected);
+                }
+            });
+
+        // ensure only one brush attached
+        this.brushG.call(brush);
     }
 
     clear = function(){

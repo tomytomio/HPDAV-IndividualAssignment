@@ -51,14 +51,28 @@ function ScatterplotContainer({scatterplotData, xAttribute, yAttribute, selected
             scatterplotControllerMethods.updateSelectedItems([itemData])
         }
         const handleOnMouseEnter = function(itemData){
+            // intentionally empty to avoid highlighting on hover
         }
         const handleOnMouseLeave = function(){
+            // intentionally empty
+        }
+
+        // dedicated handler used for brush selections
+        const handleOnSelection = function(items){
+            const sel = Array.isArray(items) ? items : [items];
+            if (sel.length > 0 ) {
+                scatterplotControllerMethods.updateSelectedItems(sel);
+            } else if (Array.isArray(items) && items.length === 0) {
+                // explicit clear selection
+                scatterplotControllerMethods.updateSelectedItems([]);
+            }
         }
 
         const controllerMethods={
             handleOnClick,
             handleOnMouseEnter,
-            handleOnMouseLeave
+            handleOnMouseLeave,
+            handleOnSelection
         }
 
         if(scatterplotDataRef.current !== scatterplotData) {

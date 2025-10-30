@@ -34,6 +34,7 @@ function App() {
         <div className="App">
             <div id={"MultiviewContainer"} className={"row"}>
                 <ScatterplotContainer scatterplotData={data} xAttribute={"area"} yAttribute={"price"} selectedItems={selectedItems} scatterplotControllerMethods={scatterplotControllerMethods}/>
+                <ScatterplotContainer scatterplotData={data} xAttribute={"area"} yAttribute={"price"} selectedItems={selectedItems} scatterplotControllerMethods={scatterplotControllerMethods}/>
                 
             </div>
         </div>
