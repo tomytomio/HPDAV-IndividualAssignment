@@ -19,7 +19,8 @@
     font-size: 13px;
     flex-shrink: 0;
     max-height: 150px;
-    overflow-y: auto;
+    overflow-y: scroll; /* keep scrollbar visible so users know there's more */
+    scrollbar-gutter: stable; /* reserve space for scrollbar */
     background: #fafafa;
     border-radius: 4px;
 }
