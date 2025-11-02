@@ -12,6 +12,7 @@ class ParsetD3 {
         this.categoryGap = 2; // gap between categories in pixels
         this.order = {}; // per-attribute custom order for categories
         this.minCategoryRatio = 0.01; // categories below this ratio are grouped as 'Others'
+        this._lastSelectionHash = null; // track selection changes to avoid infinite reorganize loops
     }
 
     // ---------- Utility helpers ----------
@@ -124,10 +125,10 @@ class ParsetD3 {
                 });
             }
 
-            let yPos = 0;
+            let yPos = 35; // Start below the axis titles (highest title at 10, need space)
             cats.forEach(cat => {
                 cat.y = yPos;
-                cat.h = (cat.count / total) * this.height;
+                cat.h = (cat.count / total) * (this.height - 35); // Adjust height to account for top offset
                 yPos += cat.h;
             });
             nodes[attr] = {attr, cats};
@@ -170,7 +171,7 @@ class ParsetD3 {
         });
 
         // 3) Assign per-pair segment positions so ribbons are grouped on both sides
-    const heightFactor = this.height / (total || 1);
+    const heightFactor = (this.height - 35) / (total || 1); // Adjust for top offset
     const segLen = Math.max(0, axes.length - 1);
     paths.forEach(p => { p.h = p.count * heightFactor; p.seg = new Array(segLen).fill(null); });
 
@@ -255,6 +256,18 @@ class ParsetD3 {
         if (state && state.order && Object.keys(state.order).length > 0) {
             this.order = {...this.order, ...state.order};
         }
+
+        // Auto-reorganize on selection change to group selected ribbons (only if selection actually changed)
+        const selectionHash = JSON.stringify(state.selected || {});
+        const hasSelection = state.selected && Object.keys(state.selected).some(k => state.selected[k] && state.selected[k].size > 0);
+        if (hasSelection && selectionHash !== this._lastSelectionHash) {
+            this._lastSelectionHash = selectionHash;
+            this.reorganizeForSelection(data, axes, state);
+            // Don't return - continue to render with the new order
+        } else if (!hasSelection && this._lastSelectionHash !== null) {
+            this._lastSelectionHash = null; // reset when selection is cleared
+        }
+
         const layout = this.computeLayout(data, axes);
 
         // Horizontal positions of axes
@@ -273,15 +286,19 @@ class ParsetD3 {
             .join(enter=>enter.append('g').attr('class','axisG'))
             .attr('transform', (d,i) => `translate(${x(i)},0)`);
 
-        // Draw axis titles
-        axisG.selectAll('text.axisTitle')
-            .data(d=>[d])
-            .join('text')
-            .attr('class','axisTitle')
-            .attr('x', this.rectW / 2)
-            .attr('y',-6)
-            .attr('text-anchor', 'middle')
-            .text(d=>d);
+        // Draw axis titles - alternate height to avoid overlap (odd layers higher, even layers lower)
+        // Position at top of plot, inside the visible space
+        const rectW = this.rectW; // capture for closure
+        axisG.each(function(attr, axisIndex) {
+            d3.select(this).selectAll('text.axisTitle')
+                .data([attr])
+                .join('text')
+                .attr('class','axisTitle')
+                .attr('x', rectW / 2)
+                .attr('y', (axisIndex % 2 === 0) ? 25 : 10) // even: 25, odd: 10 (higher)
+                .attr('text-anchor', 'middle')
+                .text(d=>d);
+        });
 
         // Draw categories for each axis
         axisG.each((attr, i, nodesSel) => {
@@ -549,6 +566,100 @@ class ParsetD3 {
             this._state.onOrderChanged(orderMap);
         }
         this.render(this._data, this._axes, this._state);
+    }
+
+    // Reorganize categories to group selected ribbons together when selection is active
+    reorganizeForSelection(data, axes, state){
+        if (!state || !state.selected || axes.length < 2) return;
+        const layout = this.computeLayout(data, axes);
+        if (!layout) return;
+
+        // Determine which paths match the selection
+        const effSelectedEntries = Object.entries(state.selected).filter(([a,s])=> axes.includes(a) && s && s.size>0);
+        const hasActiveSelection = effSelectedEntries.length>0;
+        if (!hasActiveSelection) return;
+
+        const matchesSelection = (path) => {
+            for (const [a, s] of effSelectedEntries){
+                if (!s.has(path.byAttr[a])) return false;
+            }
+            return true;
+        };
+
+        const orderMap = {...(this.order || {})};
+
+        // Build index maps for current order
+        const buildIdxMap = () => {
+            const idx = {};
+            axes.forEach(a => {
+                const baseOrder = (orderMap[a] && orderMap[a].length)
+                    ? orderMap[a]
+                    : layout.nodes[a].cats.map(c => c.key);
+                idx[a] = new Map(baseOrder.map((k, j)=>[k, j]));
+            });
+            return idx;
+        };
+
+        // For each axis, compute a score per category: categories with selected flows get avg neighbor position
+        axes.forEach((attr, axisIndex) => {
+            const cats = layout.nodes[attr].cats.map(c => c.key);
+            const scored = cats.map(catKey => {
+                // Filter paths touching this category on this axis
+                const touching = layout.paths.filter(p => p.values[axisIndex] === catKey);
+                const selectedTouching = touching.filter(matchesSelection);
+
+                if (selectedTouching.length === 0) {
+                    // No selected flows: push to bottom, sort by count desc
+                    return {key: catKey, isSelected: false, avg: Number.MAX_SAFE_INTEGER, count: touching.reduce((s,p)=>s+p.count,0)};
+                }
+
+                // Compute weighted average neighbor position from both left and right
+                let sumWeightedPos = 0;
+                let sumWeight = 0;
+                const idxMap = buildIdxMap();
+
+                // Left neighbor contribution
+                if (axisIndex > 0) {
+                    const leftAttr = axes[axisIndex - 1];
+                    const leftIdx = idxMap[leftAttr];
+                    selectedTouching.forEach(p => {
+                        const neighborCat = p.values[axisIndex - 1];
+                        const pos = leftIdx.get(neighborCat) ?? 0;
+                        sumWeightedPos += pos * p.count;
+                        sumWeight += p.count;
+                    });
+                }
+
+                // Right neighbor contribution
+                if (axisIndex < axes.length - 1) {
+                    const rightAttr = axes[axisIndex + 1];
+                    const rightIdx = idxMap[rightAttr];
+                    selectedTouching.forEach(p => {
+                        const neighborCat = p.values[axisIndex + 1];
+                        const pos = rightIdx.get(neighborCat) ?? 0;
+                        sumWeightedPos += pos * p.count;
+                        sumWeight += p.count;
+                    });
+                }
+
+                const avg = sumWeight > 0 ? (sumWeightedPos / sumWeight) : 0;
+                return {key: catKey, isSelected: true, avg, count: selectedTouching.reduce((s,p)=>s+p.count,0)};
+            });
+
+            // Sort: selected categories by avg neighbor position, then unselected by count desc
+            scored.sort((a, b) => {
+                if (a.isSelected && !b.isSelected) return -1;
+                if (!a.isSelected && b.isSelected) return 1;
+                if (a.isSelected && b.isSelected) return a.avg - b.avg;
+                return b.count - a.count;
+            });
+
+            orderMap[attr] = scored.map(d => d.key);
+        });
+
+        this.order = orderMap;
+        // Don't notify host here - let the reorganization happen silently without triggering React state update
+        // The order will be used in the immediate re-render below
     }
 }
 
