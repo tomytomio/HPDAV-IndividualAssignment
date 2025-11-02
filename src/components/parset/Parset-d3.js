@@ -632,33 +632,29 @@ class ParsetD3 {
                     key: catKey,
                     originalIndex,
                     hasSelected: true,
-                    connections, // array of connection signatures
-                    primaryConnection: connections[0] || '', // use first as primary for grouping
+                    connections,
+                    primaryConnection: connections[0] || '',
                     count: selectedTouching.reduce((s,p)=>s+p.count, 0)
                 };
             });
 
-            // Sort to group categories with same connection patterns together
-            // while maintaining relative position for categories without changes
+            // sort to group similar patterns together
             categoryInfo.sort((a, b) => {
-                // If neither has selected ribbons, keep original order
                 if (!a.hasSelected && !b.hasSelected) {
                     return a.originalIndex - b.originalIndex;
                 }
 
-                // Mix of selected and non-selected: keep original order
-                // (don't push selected to top or bottom)
+                // keep original order if one has selection and other doesn't
                 if (a.hasSelected !== b.hasSelected) {
                     return a.originalIndex - b.originalIndex;
                 }
 
-                // Both have selected ribbons: group by connection pattern
+                // both selected - group by connection pattern
                 if (a.hasSelected && b.hasSelected) {
-                    // Group by primary connection signature
                     const connCmp = a.primaryConnection.localeCompare(b.primaryConnection);
                     if (connCmp !== 0) return connCmp;
                     
-                    // Within same connection group: maintain original order for stability
+                    // same pattern - keep original order
                     return a.originalIndex - b.originalIndex;
                 }
 
@@ -669,8 +665,7 @@ class ParsetD3 {
         });
 
         this.order = orderMap;
-        // Don't notify host here - let the reorganization happen silently without triggering React state update
-        // The order will be used in the immediate re-render below
+        // don't notify host here, just silently reorganize
     }
 }
 

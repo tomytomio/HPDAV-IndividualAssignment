@@ -1,9 +1,10 @@
 import Papa from "papaparse"
+// quick Box–Muller normal sampler
 function gaussianRandom(mean=0, stdev=1) {
-    const u = 1 - Math.random(); // Converting [0,1) to (0,1]
+    const u = 1 - Math.random(); // (0,1]
     const v = Math.random();
     const z = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
-    // Transform to the desired mean and standard deviation:
+    // scale/shift
     return z * stdev + mean;
 }
 function generateValue(typeGen,i,mean,stddev){
@@ -22,6 +23,7 @@ function generateValue(typeGen,i,mean,stddev){
     return effectiveValue;
 }
 
+// tiny helper to generate a grid of demo data
 export function genGridData(nbRows, nbColumns, typeGen="random-int", typeGen2="random"){
     console.log("helper.genGridData()")
     const valuesArr = []
@@ -36,8 +38,9 @@ export function genGridData(nbRows, nbColumns, typeGen="random-int", typeGen2="r
     }
     return valuesArr;
 }
+// even smaller grid with a single highlighted cell
 export function genGridValues(nbRows, nbColumns, typeGen="random-int", typeGen2="random"){
-    console.log("helper.genGridData()")
+    console.log("helper.genGridValues()")
     const randomVal = Math.floor(generateValue("random")*nbColumns*nbRows)
     const valuesArr = []
     for(let i=0;i<nbRows*nbColumns;i++){
@@ -84,7 +87,7 @@ export function getDefaultFontSize (){
     return !isNaN(result) ? result : null;
 };
 
-
+// fetch a CSV and return parsed rows (adds index)
 export async function fetchCSV(filePath,callback_f){
     fetchText(filePath,(textResponse)=>{
         const result = Papa.parse(textResponse, {header:true, dynamicTyping:true});
@@ -93,6 +96,7 @@ export async function fetchCSV(filePath,callback_f){
     })
 }
 
+// fetch raw text (simple wrapper)
 export async function  fetchText(filePath,callback_f){
     fetch(filePath,{headers:{
             'Content-Type':'text/plain',

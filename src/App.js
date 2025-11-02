@@ -7,8 +7,8 @@ import ParsetContainer from "./components/parset/ParsetContainer";
 function App() {
     console.log("App component function call...")
     const [data,setData] = useState([])
-    const [parsetAttrs, setParsetAttrs] = useState([]); // attributes for parset loaded dynamically from CSV
-    // every time the component re-render
+    const [parsetAttrs, setParsetAttrs] = useState([]); // parset attributes from CSV
+    // runs on every render (debug)
     useEffect(()=>{
         console.log("App useEffect (called each time App re-renders)");
     }); // if no dependencies, useEffect is called at each re-render
@@ -21,7 +21,7 @@ function App() {
             setData(rows);
             if (rows.length > 0) {
                 const keys = Object.keys(rows[0] || {});
-                // Exclude continuous variables and synthetic index
+                // skip continuous vars and the synthetic index
                 const attrs = keys.filter(k => k !== 'price' && k !== 'area' && k !== 'index');
                 setParsetAttrs(attrs);
             }
@@ -38,16 +38,16 @@ function App() {
         updateSelectedItems: (items) =>{
             setSelectedItems(items.map((item) => {return {...item,selected:true}} ));
         },
-        // Handle brush selection - reset parset
+    // brush: multi-select in scatterplot -> clear parset selection
         handleBrushSelection: (items) => {
             setSelectedItems(items.map((item) => {return {...item,selected:true}} ));
             setParsetSelection({}); // Clear parset selection
         },
-        // Handle click selection - select matching ribbon in parset
+    // click: single point -> build a parset selection for it
         handleClickSelection: (item) => {
             setSelectedItems([{...item, selected:true}]);
             
-            // Build parset selection from this single item
+            // build per-attribute selection from this one item
             const newSelection = {};
             const attrs = (parsetAttrs && parsetAttrs.length>0)
                 ? parsetAttrs
@@ -63,12 +63,11 @@ function App() {
         }
     };
 
-    // Handle parset selection and convert to items list
+    // parset -> scatterplot: convert selection to item list
     const handleParsetSelection = (selection) => {
         setParsetSelection(selection);
         
-        // selection is {attr: Set(values)}
-        // filter data to find items matching all selected categories
+    // selection looks like {attr: Set(values)}; keep items matching all chosen categories
         if (!selection || Object.keys(selection).length === 0 || 
             Object.values(selection).every(s => !s || s.size === 0)) {
             setSelectedItems([]);
@@ -79,7 +78,7 @@ function App() {
             for (const [attr, valueSet] of Object.entries(selection)) {
                 if (!valueSet || valueSet.size === 0) continue;
                 
-                // normalize value same way as in parset
+                // normalize same way as parset
                 let v = item[attr];
                 if (v === true || v === false) v = String(v);
                 else if (v === null || v === undefined || v === '') v = 'NA';

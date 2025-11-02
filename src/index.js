@@ -5,9 +5,7 @@ import App from './App';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
-    // Comment <React.StrictMode> to better analyze component lifecycle without double rendering
-    // enable it to find common bugs in react components (impure rendering, missing effect cleanup, missing ref cleanup)
-    // see https://react.dev/reference/react/StrictMode for more information
+    // I usually comment StrictMode while debugging (avoids the double-render in dev)
     // <React.StrictMode>
         <App />
     // </React.StrictMode>

@@ -3,7 +3,7 @@ import ParsetD3 from './Parset-d3';
 import './Parset.css';
 import {fetchCSV} from '../../utils/helper';
 
-// Build attribute candidates from CSV dynamically (exclude continuous scatterplot vars and synthetic fields)
+// figure out which columns we can use here (skip continuous scatterplot vars + synthetic fields)
 const deriveAllAttributes = (rows) => {
     if (!rows || rows.length === 0) return [];
     // Collect keys from the first non-empty row
@@ -24,17 +24,17 @@ function ParsetContainer(props){
     const [order, setOrder] = useState({});
     const [size, setSize] = useState({width: 800, height: 600});
 
-    // Use external selection if provided, otherwise manage internally
+    // use selection passed from parent if any, otherwise noop setter
     const selected = props.selection !== undefined ? props.selection : {};
     const setSelected = props.onSelection || (() => {});
 
-    // Calculate size from container
+    // measure available size from the container
     useEffect(() => {
         const updateSize = () => {
             if (containerRef.current) {
                 const width = containerRef.current.offsetWidth;
                 const height = containerRef.current.offsetHeight;
-                // Account for control panel height - measure it if it exists
+                // subtract control panel height if present
                 const controlPanel = containerRef.current.querySelector('.controlPanel');
                 const controlHeight = controlPanel ? controlPanel.offsetHeight : 0;
                 setSize({width, height: Math.max(300, height - controlHeight - 20)});
@@ -44,7 +44,7 @@ function ParsetContainer(props){
         updateSize();
         window.addEventListener('resize', updateSize);
         
-        // Small delay to ensure control panel is rendered
+    // tiny delay to catch late layout
         const timer = setTimeout(updateSize, 100);
         
         return () => {
@@ -53,13 +53,13 @@ function ParsetContainer(props){
         };
     }, []);
 
-    // load data if not provided
+    // load CSV if data wasn't provided as prop
     useEffect(()=>{
         if (props.data && props.data.length>0){ setData(props.data); return; }
         fetchCSV('data/Housing.csv',(res)=>{ setData(res.data); });
     },[props.data]);
 
-    // derive available attributes and initialize axes from data
+    // derive attributes from data and initialize axes once
     useEffect(()=>{
         if (!data || data.length === 0) return;
         const attrs = deriveAllAttributes(data);
@@ -70,11 +70,11 @@ function ParsetContainer(props){
 
     
 
-    // render/update
+    // draw/update the viz
     const renderVis = useCallback(()=>{
         if (!visRef.current) return;
         if (!axes || axes.length === 0 || !data || data.length === 0) {
-            // nothing to render yet
+            // nothing ready yet
             return;
         }
         const state = {
@@ -85,16 +85,16 @@ function ParsetContainer(props){
                 const s = new Set(copy[attr] ? Array.from(copy[attr]) : []);
                 if (s.has(key)) s.delete(key); else s.add(key);
                 copy[attr] = s;
-                // notify parent
+                // bubble up selection change
                 setSelected(copy);
             },
             onReorder: (attr,key,newY)=>{
-                // compute new order based on current order and newY value
+                // quick heuristic to build a new order based on drop position
                 setOrder(prev=>{
                     const copy = {...prev};
                     const curOrder = copy[attr] ? Array.from(copy[attr]) : null;
-                    // if no explicit order, create from current axes categories
-                    // simple heuristic: move key to front/back based on sign of newY
+                    // if no explicit order yet, start with just the dragged key
+                    // move to front/back depending on how far it was dragged
                     if (!curOrder){ copy[attr] = [key]; }
                     else {
                         const idx = curOrder.indexOf(key);
@@ -107,29 +107,29 @@ function ParsetContainer(props){
                 });
             },
             onOrderChanged: (newOrder)=>{
-                // sync order from D3 (autoArrange or other internal changes)
+                // sync order coming from D3 (autoArrange, etc.)
                 setOrder(prev => ({...prev, ...newOrder}));
             }
         };
         visRef.current.render(data, axes, state);
     },[data,axes,selected,order,setSelected]);
 
-    // create vis and re-render when size changes (placed after renderVis to avoid TDZ)
+    // create the D3 vis and re-render when size changes
     useEffect(()=>{
         if (!elRef.current) return;
-        // clear any previous svg
+    // clear any previous svg
         if (visRef.current) { visRef.current.clear(); }
         visRef.current = new ParsetD3(elRef.current);
         visRef.current.create({size});
-        // attempt immediate render if data/axes are ready
+    // try to render immediately if data/axes are ready
         renderVis();
         return ()=>{ visRef.current && visRef.current.clear(); }
     },[elRef, size, renderVis]);
 
-    // re-render when data/axes/selection change
+    // re-render when data/axes/selection/order change
     useEffect(()=>{ renderVis(); },[data,axes,selected,order,renderVis]);
 
-    // control UI: toggle axes on/off, reorder axes horizontally
+    // control bar: toggle axes and reorder them horizontally
     const toggleAxis = (attr)=>{
         setAxes(prev=> prev.includes(attr) ? prev.filter(a=>a!==attr) : [...prev,attr]);
     }
