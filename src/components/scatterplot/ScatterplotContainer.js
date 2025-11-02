@@ -1,5 +1,5 @@
 import './Scatterplot.css'
-import {useEffect, useRef} from 'react';
+import {useEffect, useRef, useState} from 'react';
 
 import ScatterplotD3 from './Scatterplot-d3';
 
@@ -7,30 +7,54 @@ import ScatterplotD3 from './Scatterplot-d3';
 
 function ScatterplotContainer({scatterplotData, xAttribute, yAttribute, selectedItems, scatterplotControllerMethods}){
 
+    const divContainerRef=useRef(null);
+    const scatterplotD3Ref = useRef(null);
+    const [containerSize, setContainerSize] = useState({width: 800, height: 600});
+
     // every time the component re-render
     useEffect(()=>{
         // console.log("ScatterplotContainer useEffect (called each time scatterplot re-renders)");
     }); // if no dependencies, useEffect is called at each re-render
 
-    const divContainerRef=useRef(null);
-    const scatterplotD3Ref = useRef(null)
-
     const getChartSize = function(){
         // getting size from parent item
-        let width;// = 800;
-        let height;// = 100;
-        if(divContainerRef.current!==undefined){
+        let width = 800;
+        let height = 600;
+        if(divContainerRef.current!==undefined && divContainerRef.current !== null){
             width=divContainerRef.current.offsetWidth;
-            height=divContainerRef.current.offsetHeight-4;
+            height=divContainerRef.current.offsetHeight;
         }
         return {width:width,height:height};
     }
+
+    // Track container size changes
+    useEffect(() => {
+        const updateSize = () => {
+            const newSize = getChartSize();
+            setContainerSize(newSize);
+        };
+        
+        updateSize();
+        window.addEventListener('resize', updateSize);
+        
+        // Use ResizeObserver if available for more accurate tracking
+        let resizeObserver;
+        if (divContainerRef.current && window.ResizeObserver) {
+            resizeObserver = new ResizeObserver(updateSize);
+            resizeObserver.observe(divContainerRef.current);
+        }
+        
+        return () => {
+            window.removeEventListener('resize', updateSize);
+            if (resizeObserver) resizeObserver.disconnect();
+        };
+    }, []);
 
     // did mount called once the component did mount
     useEffect(()=>{
         console.log("ScatterplotContainer useEffect [] called once the component did mount");
         const scatterplotD3 = new ScatterplotD3(divContainerRef.current);
-        scatterplotD3.create({size:getChartSize()});
+        scatterplotD3.create({size:containerSize});
         scatterplotD3Ref.current = scatterplotD3;
         return ()=>{
             // did unmout, the return function is called once the component did unmount (removed for the screen)
@@ -38,7 +62,7 @@ function ScatterplotContainer({scatterplotData, xAttribute, yAttribute, selected
             const scatterplotD3 = scatterplotD3Ref.current;
             scatterplotD3.clear()
         }
-    },[]);// if empty array, useEffect is called after the component did mount (has been created)
+    },[containerSize]);// recreate when size changes
 
 
     const scatterplotDataRef = useRef(scatterplotData);
@@ -48,7 +72,11 @@ function ScatterplotContainer({scatterplotData, xAttribute, yAttribute, selected
 
         const handleOnClick = function(itemData){
             console.log("handleOnClick ...")
-            scatterplotControllerMethods.updateSelectedItems([itemData])
+            if (scatterplotControllerMethods.handleClickSelection) {
+                scatterplotControllerMethods.handleClickSelection(itemData);
+            } else {
+                scatterplotControllerMethods.updateSelectedItems([itemData]);
+            }
         }
         const handleOnMouseEnter = function(itemData){
             // intentionally empty to avoid highlighting on hover
@@ -60,7 +88,9 @@ function ScatterplotContainer({scatterplotData, xAttribute, yAttribute, selected
         // dedicated handler used for brush selections
         const handleOnSelection = function(items){
             const sel = Array.isArray(items) ? items : [items];
-            if (sel.length > 0 ) {
+            if (scatterplotControllerMethods.handleBrushSelection) {
+                scatterplotControllerMethods.handleBrushSelection(sel);
+            } else if (sel.length > 0 ) {
                 scatterplotControllerMethods.updateSelectedItems(sel);
             } else if (Array.isArray(items) && items.length === 0) {
                 // explicit clear selection
