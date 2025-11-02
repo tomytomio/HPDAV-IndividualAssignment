@@ -3,16 +3,24 @@ import ParsetD3 from './Parset-d3';
 import './Parset.css';
 import {fetchCSV} from '../../utils/helper';
 
-const DEFAULT_AXES = [
-    'furnishingstatus', 'prefarea', 'parking', 'airconditioning', 'heating', 'hotwater', 'basement', 'guestroom', 'mainroad', 'stories', 'bathrooms', 'bedrooms'
-];
+// Build attribute candidates from CSV dynamically (exclude continuous scatterplot vars and synthetic fields)
+const deriveAllAttributes = (rows) => {
+    if (!rows || rows.length === 0) return [];
+    // Collect keys from the first non-empty row
+    const first = rows.find(r => r && Object.keys(r).length > 0) || rows[0];
+    const keys = Object.keys(first);
+    // Exclude known continuous variables used by scatterplot and the synthetic 'index'
+    const exclude = new Set(['price','area','index']);
+    return keys.filter(k => !exclude.has(k));
+}
 
 function ParsetContainer(props){
     const elRef = useRef();
     const visRef = useRef();
     const containerRef = useRef();
     const [data, setData] = useState([]);
-    const [axes, setAxes] = useState(DEFAULT_AXES);
+    const [allAttrs, setAllAttrs] = useState([]);
+    const [axes, setAxes] = useState([]);
     const [order, setOrder] = useState({});
     const [size, setSize] = useState({width: 800, height: 600});
 
@@ -51,17 +59,24 @@ function ParsetContainer(props){
         fetchCSV('data/Housing.csv',(res)=>{ setData(res.data); });
     },[props.data]);
 
-    // create vis
+    // derive available attributes and initialize axes from data
     useEffect(()=>{
-        if (!elRef.current) return;
-        visRef.current = new ParsetD3(elRef.current);
-        visRef.current.create({size});
-        return ()=>{ visRef.current && visRef.current.clear(); }
-    },[elRef, size]);
+        if (!data || data.length === 0) return;
+        const attrs = deriveAllAttributes(data);
+        setAllAttrs(attrs);
+        // Initialize axes only if not set yet
+        setAxes(prev => (prev && prev.length>0) ? prev : attrs);
+    },[data]);
+
+    
 
     // render/update
     const renderVis = useCallback(()=>{
         if (!visRef.current) return;
+        if (!axes || axes.length === 0 || !data || data.length === 0) {
+            // nothing to render yet
+            return;
+        }
         const state = {
             selected,
             order,
@@ -90,10 +105,26 @@ function ParsetContainer(props){
                     }
                     return copy;
                 });
+            },
+            onOrderChanged: (newOrder)=>{
+                // sync order from D3 (autoArrange or other internal changes)
+                setOrder(prev => ({...prev, ...newOrder}));
             }
         };
         visRef.current.render(data, axes, state);
     },[data,axes,selected,order,setSelected]);
+
+    // create vis and re-render when size changes (placed after renderVis to avoid TDZ)
+    useEffect(()=>{
+        if (!elRef.current) return;
+        // clear any previous svg
+        if (visRef.current) { visRef.current.clear(); }
+        visRef.current = new ParsetD3(elRef.current);
+        visRef.current.create({size});
+        // attempt immediate render if data/axes are ready
+        renderVis();
+        return ()=>{ visRef.current && visRef.current.clear(); }
+    },[elRef, size, renderVis]);
 
     // re-render when data/axes/selection change
     useEffect(()=>{ renderVis(); },[data,axes,selected,order,renderVis]);
@@ -117,15 +148,18 @@ function ParsetContainer(props){
     return (
         <div ref={containerRef} className="parset-root" style={{width: '100%', height: '100%', display: 'flex', flexDirection: 'column'}}>
             <div className="controlPanel">
-                <div style={{marginBottom:6}}>Axes (click to toggle, arrows to reorder):</div>
+                <div style={{marginBottom:6, display:'flex', alignItems:'center', gap:8}}>
+                    <span>Axes (click to toggle, use left/right arrows to reorder)</span>
+                    <button type="button" title="Organize ribbons to reduce overlap" onClick={()=>{ visRef.current && visRef.current.autoArrange && visRef.current.autoArrange(); }}>Organize ribbons</button>
+                </div>
                 <div className="attrList">
-                    {DEFAULT_AXES.map(a=> (
+                    {allAttrs.map(a=> (
                         <div key={a} className="attrItem">
                             <label style={{display:'flex',alignItems:'center',gap:6}}>
                                 <input type="checkbox" checked={axes.includes(a)} onChange={()=>toggleAxis(a)}/>
                                 <span style={{minWidth:160}}>{a}</span>
-                                <button onClick={()=>moveAxis(a,-1)}>&uarr;</button>
-                                <button onClick={()=>moveAxis(a,1)}>&darr;</button>
+                                <button aria-label="Move left" title="Move left" onClick={()=>moveAxis(a,-1)}>&larr;</button>
+                                <button aria-label="Move right" title="Move right" onClick={()=>moveAxis(a,1)}>&rarr;</button>
                             </label>
                         </div>
                     ))}

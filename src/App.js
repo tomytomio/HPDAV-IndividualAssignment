@@ -4,13 +4,10 @@ import {fetchCSV} from "./utils/helper";
 import ScatterplotContainer from "./components/scatterplot/ScatterplotContainer";
 import ParsetContainer from "./components/parset/ParsetContainer";
 
-const DEFAULT_AXES = [
-    'furnishingstatus', 'prefarea', 'parking', 'airconditioning', 'heating', 'hotwater', 'basement', 'guestroom', 'mainroad', 'stories', 'bathrooms', 'bedrooms'
-];
-
 function App() {
     console.log("App component function call...")
     const [data,setData] = useState([])
+    const [parsetAttrs, setParsetAttrs] = useState([]); // attributes for parset loaded dynamically from CSV
     // every time the component re-render
     useEffect(()=>{
         console.log("App useEffect (called each time App re-renders)");
@@ -20,7 +17,14 @@ function App() {
         console.log("App did mount");
         fetchCSV("data/Housing.csv",(response)=>{
             console.log("initial setData() ...")
-            setData(response.data);
+            const rows = response.data || [];
+            setData(rows);
+            if (rows.length > 0) {
+                const keys = Object.keys(rows[0] || {});
+                // Exclude continuous variables and synthetic index
+                const attrs = keys.filter(k => k !== 'price' && k !== 'area' && k !== 'index');
+                setParsetAttrs(attrs);
+            }
         })
         return ()=>{
             console.log("App did unmount");
@@ -45,7 +49,10 @@ function App() {
             
             // Build parset selection from this single item
             const newSelection = {};
-            DEFAULT_AXES.forEach(attr => {
+            const attrs = (parsetAttrs && parsetAttrs.length>0)
+                ? parsetAttrs
+                : Object.keys(item).filter(k => k !== 'price' && k !== 'area' && k !== 'index');
+            attrs.forEach(attr => {
                 let v = item[attr];
                 if (v === true || v === false) v = String(v);
                 else if (v === null || v === undefined || v === '') v = 'NA';
